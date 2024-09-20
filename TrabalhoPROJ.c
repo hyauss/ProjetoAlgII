@@ -1,7 +1,6 @@
-//Nomes
 //Vinicius Alves Marques RA: 10417880
 //Gabriel Barros Albertini RA: 10419482
-//Rafael de Menezes Rossi RA: 
+//Rafael de Menezes Ros RA: 10417954
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,9 +10,8 @@
 
 // Estrutura para armazenar os movimentos realizados
 typedef struct {
-    int from_x, from_y;  // Coordenadas de onde o pino se moveu
-    int to_x, to_y;      // Coordenadas para onde o pino foi movido
-} Movimento;
+    int tabuleiro[N][N];  // Armazena o estado do tabuleiro
+} EstadoTabuleiro;
 
 // Tabuleiro inicial (1 = pino, 0 = vazio, -1 = posição inválida)
 int tabuleiro[N][N];
@@ -22,9 +20,10 @@ int tabuleiro[N][N];
 int dx[] = {-2, 2, 0, 0};
 int dy[] = {0, 0, -2, 2};
 
-// Vetor para armazenar os movimentos
-Movimento movimentos[31];
+// Vetor para armazenar os estados do tabuleiro
+EstadoTabuleiro estados[31];
 int contador_movimentos = 0;
+int tentativas = 0;  // Variável global para contar tentativas
 
 // Função para carregar o tabuleiro de um arquivo
 void carregar_tabuleiro(const char *nome_arquivo) {
@@ -44,18 +43,36 @@ void carregar_tabuleiro(const char *nome_arquivo) {
     fclose(arquivo);
 }
 
-// Função para imprimir o tabuleiro (para debug)
-void imprimir_tabuleiro() {
+// Função para imprimir um tabuleiro no formato especificado
+void imprimir_tabuleiro_arquivo(FILE *arquivo, int estado[N][N]) {
+    fprintf(arquivo, "#########\n");  // Imprime a borda superior
     for (int i = 0; i < N; i++) {
+        // Imprime a borda lateral
+        if (i == 2 || i == 3 || i == 4) {
+            fprintf(arquivo, "#");  // Borda lateral única para linhas do meio
+        } else {
+            fprintf(arquivo, "###");  // Borda dupla para as outras linhas
+        }
+
         for (int j = 0; j < N; j++) {
-            if (tabuleiro[i][j] == -1) {
-                printf("  ");  // Espaço para posições inválidas
+            // Imprime os elementos do tabuleiro
+            if (estado[i][j] == 1) {
+                fprintf(arquivo, "o");  // Pino
+            } else if (estado[i][j] == -1) {
+                continue;  // Não imprime nada para células inválidas
             } else {
-                printf("%d ", tabuleiro[i][j]);
+                fprintf(arquivo, " ");  // Espaço vazio (sem pino)
             }
         }
-        printf("\n");
+
+        // Finaliza a linha com a borda lateral
+        if (i == 2 || i == 3 || i == 4) {
+            fprintf(arquivo, "#\n");  // Borda lateral única
+        } else {
+            fprintf(arquivo, "###\n");  // Borda dupla
+        }
     }
+    fprintf(arquivo, "#########\n\n");  // Imprime a borda inferior
 }
 
 // Função para verificar se um movimento é válido
@@ -91,8 +108,24 @@ void desfaz_movimento(int x, int y, int nx, int ny) {
     tabuleiro[nx][ny] = 0;  // Remove pino da nova posição
 }
 
+// Função para salvar o estado atual do tabuleiro
+void salvar_estado_atual() {
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            estados[contador_movimentos].tabuleiro[i][j] = tabuleiro[i][j];
+        }
+    }
+}
+
 // Função recursiva de backtracking
 int resolver(int pinos_restantes) {
+    // Exibe uma mensagem a cada 1 milhão de tentativas para indicar progresso
+    tentativas++;
+    if (tentativas % 1000000 == 0) {
+        printf("O programa está calculando! Tentativa: %d\n", tentativas);  // Indica que o programa não está travado
+        fflush(stdout);  // Garante que a mensagem seja impressa imediatamente
+    }
+
     // Se restar apenas um pino e ele estiver no centro, solução encontrada
     if (pinos_restantes == 1 && tabuleiro[CENTRO][CENTRO] == 1) {
         return 1;
@@ -111,11 +144,8 @@ int resolver(int pinos_restantes) {
                         // Executa o movimento
                         faz_movimento(x, y, nx, ny);
 
-                        // Armazena o movimento
-                        movimentos[contador_movimentos].from_x = x;
-                        movimentos[contador_movimentos].from_y = y;
-                        movimentos[contador_movimentos].to_x = nx;
-                        movimentos[contador_movimentos].to_y = ny;
+                        // Salva o estado atual
+                        salvar_estado_atual();
                         contador_movimentos++;
 
                         // Chama recursivamente para o próximo estado
@@ -135,38 +165,45 @@ int resolver(int pinos_restantes) {
     return 0;  // Se nenhum movimento levar à solução, retorna 0
 }
 
-// Função para salvar os movimentos em um arquivo
-void salvar_movimentos() {
-    FILE *arquivo = fopen("restaum_out.txt", "w");
-    if (arquivo == NULL) {
-        printf("Erro ao criar arquivo de saída.\n");
-        return;
-    }
-
+// Função para imprimir todos os estados armazenados no arquivo
+void imprimir_estados_arquivo(FILE *arquivo) {
+    // Imprime todos os estados da solução
     for (int i = 0; i < contador_movimentos; i++) {
-        fprintf(arquivo, "Movimento %d: (%d, %d) -> (%d, %d)\n", i + 1,
-                movimentos[i].from_x, movimentos[i].from_y,
-                movimentos[i].to_x, movimentos[i].to_y);
+        imprimir_tabuleiro_arquivo(arquivo, estados[i].tabuleiro);
     }
-
-    fclose(arquivo);
 }
 
 int main() {
     // Carregar o tabuleiro de um arquivo
     carregar_tabuleiro("restaum_in.txt");
 
-    // Imprimir o tabuleiro carregado
-    printf("Tabuleiro inicial:\n");
-    imprimir_tabuleiro();
+    // Salvar o estado inicial antes de começar a resolver
+    salvar_estado_atual();
+
+    // Abrir o arquivo para salvar os estados do tabuleiro
+    FILE *arquivo_saida = fopen("restaum_out.txt", "w");
+    if (arquivo_saida == NULL) {
+        printf("Erro ao criar arquivo de saída.\n");
+        return 1;
+    }
+
+    // Imprimir o estado inicial no arquivo
+    imprimir_tabuleiro_arquivo(arquivo_saida, tabuleiro);
 
     // Iniciar a resolução com 32 pinos no tabuleiro
     if (resolver(32)) {
-        printf("Solução encontrada!\n");
-        salvar_movimentos();
+        printf("\nSolução encontrada!\n");
     } else {
-        printf("Nenhuma solução encontrada.\n");
+        printf("\nNenhuma solução encontrada.\n");
+        fclose(arquivo_saida);
+        return 1;  // Sai do programa se não houver solução
     }
+
+    // Imprimir os movimentos subsequentes
+    imprimir_estados_arquivo(arquivo_saida);
+
+    // Fechar o arquivo de saída
+    fclose(arquivo_saida);
 
     return 0;
 }
